@@ -18,7 +18,7 @@ import (
 )
 
 const (
-	numThreads = 20
+	numThreads = 100
 	expireTime = 300 // 5 min
 )
 
@@ -63,7 +63,6 @@ func writeRedis() {
 		// Check if someone told us to stop working
 		select {
 		case <-doneChan:
-			jlog.Info("Stop writing...")
 			return
 		default:
 			// continue working
