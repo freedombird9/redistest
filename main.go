@@ -2,6 +2,7 @@ package main
 
 import (
 	"bytes"
+	"flag"
 	"math/rand"
 	"net"
 	"os"
@@ -17,20 +18,18 @@ import (
 	"go-jasperlib/jlog"
 )
 
-const (
-	numThreads = 100
-	expireTime = 300 // 5 min
-)
-
 var doneChan chan bool
 var keys []string
 var redisOpts metrics.Timer
 var wg sync.WaitGroup
 var connPool *pool.Pool
+var numThreads *int
+var keySize *int
+var expireTime *int
 
 func initialize() error {
-	doneChan = make(chan bool, numThreads)
-	keys = []string{"a", "b", "c", "d", "e", "f", "g", "h"}
+	doneChan = make(chan bool, *numThreads)
+	keys = []string{"a", "b", "c", "d", "e", "f", "g", "h", "i", "j", "k", "l", "m", "n"}
 	redisOpts = metrics.NewRegisteredTimer("redisOpts", metrics.DefaultRegistry)
 
 	// initialize graphite metrics recording
@@ -45,7 +44,7 @@ func initialize() error {
 }
 
 func stop() {
-	for i := 0; i < numThreads; i++ {
+	for i := 0; i < *numThreads; i++ {
 		doneChan <- true
 	}
 }
@@ -68,9 +67,11 @@ func writeRedis() {
 			// continue working
 		}
 		var buffer bytes.Buffer
-		buffer.WriteString(keys[rand.Intn(8)])
-		buffer.WriteString(keys[rand.Intn(8)])
-		buffer.WriteString(keys[rand.Intn(8)])
+
+		keyDigit := rand.Intn(*keySize)
+		for i := 0; i < keyDigit; i++ {
+			buffer.WriteString(keys[rand.Intn(len(keys))])
+		}
 
 		start := time.Now()
 		err := conn.Cmd("incrby", buffer.String(), 88).Err
@@ -78,7 +79,7 @@ func writeRedis() {
 			jlog.Warn(err.Error())
 		}
 		redisOpts.UpdateSince(start)
-		err = conn.Cmd("EXPIRE", buffer.String(), expireTime).Err
+		err = conn.Cmd("EXPIRE", buffer.String(), *expireTime).Err
 		if err != nil {
 			jlog.Warn(err.Error())
 		}
@@ -98,20 +99,24 @@ func wait() {
 }
 
 func main() {
+	numThreads = flag.Int("numThreads", 100, "Set the number of threads, default: 100")
+	keySize = flag.Int("keySize", 3, "Set the key size, default: 3")
+	expireTime = flag.Int("expiretTime", 300, "Set the key expire time, default: 300 (5 minutes)")
+
+	flag.Parse()
 	err := initialize()
 	if err != nil {
 		jlog.Warn("initialize failed")
 		return
 	}
-	p, err := pool.New("tcp", "qa-scl007-009:6380", numThreads)
+	p, err := pool.New("tcp", "qa-scl007-009:6380", *numThreads)
 	connPool = p
 	if err != nil {
 		jlog.Warn(err.Error())
 		return
 	}
-
-	wg.Add(numThreads)
-	for i := 0; i < numThreads; i++ {
+	wg.Add(*numThreads)
+	for i := 0; i < *numThreads; i++ {
 		go writeRedis()
 	}
 
